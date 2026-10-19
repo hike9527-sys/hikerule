@@ -1,0 +1,413 @@
+# ============================================================
+# Sub-Store → Nikki 通用 Mihomo 覆写模板 v2
+# 地区：港/台/日/韩/新/菲/美 + 倍率组；自动测速与故障转移默认排除香港
+# Nikki 要点：
+#   - 端口/TUN/重定向由「代理配置 + 混入」接管，本模板不写 tun
+#   - 面板依赖 external-controller(api)，混入可覆写
+#   - 使用前请关闭 OpenWrt「网络 → DHCP/DNS → DNS 重定向」
+#   - 规则集走 jsdmirror 镜像，避免路由器直连 GitHub 失败
+# ============================================================
+
+ipv6: false
+unified-delay: true
+tcp-concurrent: true
+log-level: info
+keep-alive-idle: 600
+keep-alive-interval: 15
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
+external-controller: 0.0.0.0:9090
+secret: ""
+
+dns:
+  enable: true
+  listen: 0.0.0.0:53
+  ipv6: false
+  cache-algorithm: arc
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/15
+  fake-ip-filter-mode: blacklist
+  fake-ip-filter:
+    - "+.lan"
+    - "+.local"
+    - "+.market.xiaomi.com"
+    - "rule-set:private_domain"
+    - "rule-set:fakeip_filter"
+    - "rule-set:cn_domain"
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  proxy-server-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  nameserver:
+    - "https://1.1.1.1/dns-query#🚀 默认代理"
+    - "https://8.8.8.8/dns-query#🚀 默认代理"
+  nameserver-policy:
+    "geosite:cn":
+      - 223.5.5.5
+      - 119.29.29.29
+
+sniffer:
+  enable: true
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+  skip-domain:
+    - "+.push.apple.com"
+
+group-anchor:
+  common: &common
+    interval: 600
+    timeout: 3000
+    lazy: true
+    max-failed-times: 3
+
+  urltest: &urltest
+    <<: *common
+    type: url-test
+    tolerance: 50
+    url: "https://www.gstatic.com/generate_204"
+
+  select: &select
+    <<: *common
+    type: select
+
+proxy-groups:
+
+  - name: 🚀 默认代理
+    <<: *select
+    proxies:
+      - ♻️ 自动选择
+      - 🔯 故障转移
+      - ⚖️ 负载均衡
+      - 💰 低倍率节点
+      - 💸 高倍率节点
+      - 🇭🇰 香港节点
+      - 🇹🇼 台湾节点
+      - 🇯🇵 日本节点
+      - 🇰🇷 韩国节点
+      - 🇸🇬 新加坡节点
+      - 🇵🇭 菲律宾节点
+      - 🇺🇸 美国节点
+      - 🌐 全部节点
+      - DIRECT
+
+  - name: ♻️ 自动选择
+    <<: *urltest
+    include-all: true
+    exclude-filter: "(?i)(港|HK|Hong Kong|一元机场)|(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🔯 故障转移
+    <<: *common
+    type: fallback
+    include-all: true
+    url: "https://www.gstatic.com/generate_204"
+    exclude-filter: "(?i)(港|HK|Hong Kong|一元机场)|(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: ⚖️ 负载均衡
+    <<: *common
+    type: load-balance
+    strategy: sticky-sessions
+    include-all: true
+    url: "https://www.gstatic.com/generate_204"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 💰 低倍率节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(低倍|免费|白嫖|free|0\\.[0-9]+[*×x]|[(*×x]0\\.[0-9]+)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 💸 高倍率节点
+    <<: *select
+    include-all: true
+    filter: "(?i)([2-9][0-9]*[*×x]|[1-9][0-9]+[*×x]|[*×x][2-9][0-9]*|[2-9][0-9]*倍|[1-9][0-9]+倍)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🇭🇰 香港节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(港|HK|Hong Kong)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+    proxies: ["🇭🇰 香港-自动"]
+
+  - name: 🇭🇰 香港-自动
+    <<: *urltest
+    include-all: true
+    filter: "(?i)(港|HK|Hong Kong)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🇹🇼 台湾节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(台湾|台北|高雄|TW|Taiwan)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+    proxies: ["🇹🇼 台湾-自动"]
+
+  - name: 🇹🇼 台湾-自动
+    <<: *urltest
+    include-all: true
+    filter: "(?i)(台湾|台北|高雄|TW|Taiwan)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🇯🇵 日本节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(日本|东京|大阪|京都|JP|Japan)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+    proxies: ["🇯🇵 日本-自动"]
+
+  - name: 🇯🇵 日本-自动
+    <<: *urltest
+    include-all: true
+    filter: "(?i)(日本|东京|大阪|京都|JP|Japan)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🇰🇷 韩国节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(韩|首尔|KR|Korea|Seoul)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+    proxies: ["🇰🇷 韩国-自动"]
+
+  - name: 🇰🇷 韩国-自动
+    <<: *urltest
+    include-all: true
+    filter: "(?i)(韩|首尔|KR|Korea|Seoul)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🇸🇬 新加坡节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(新加坡|狮城|SG|Singapore)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+    proxies: ["🇸🇬 新加坡-自动"]
+
+  - name: 🇸🇬 新加坡-自动
+    <<: *urltest
+    include-all: true
+    filter: "(?i)(新加坡|狮城|SG|Singapore)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🇵🇭 菲律宾节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(菲律宾|PH|Philippines|Manila)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+    proxies: ["🇵🇭 菲律宾-自动"]
+
+  - name: 🇵🇭 菲律宾-自动
+    <<: *urltest
+    include-all: true
+    filter: "(?i)(菲律宾|PH|Philippines|Manila)"
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🇺🇸 美国节点
+    <<: *select
+    include-all: true
+    filter: "(?i)(美国|US|United States|America|纽约|洛杉矶|西雅图|芝加哥|硅谷)"
+    exclude-filter: "(?i)(🇦🇺|🇦🇹|Australia|Austria)|(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+    proxies: ["🇺🇸 美国-自动"]
+
+  - name: 🇺🇸 美国-自动
+    <<: *urltest
+    include-all: true
+    filter: "(?i)(美国|US|United States|America|纽约|洛杉矶|西雅图|芝加哥|硅谷)"
+    exclude-filter: "(?i)(🇦🇺|🇦🇹|Australia|Austria)|(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 🌐 全部节点
+    <<: *select
+    include-all: true
+    exclude-filter: "(?i)(剩余|到期|流量|官网|客服|电报|频道|订阅|通知|教程|更新|过期|已用|联系|邮箱|工单|机场|防失联|无法|提示|获取|网址|优惠|福利|邀请|version|traffic|expire|t\\.me|https?://|@)"
+
+  - name: 📹 YouTube
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇹🇼 台湾节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 🍀 Google
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇹🇼 台湾节点", "🇯🇵 日本节点", "🇰🇷 韩国节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 🤖 AI
+    <<: *select
+    proxies: ["🔯 故障转移", "♻️ 自动选择", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇹🇼 台湾节点", "🇰🇷 韩国节点", "🇺🇸 美国节点", "🌐 全部节点", "🚀 默认代理", "DIRECT"]
+
+  - name: 👨🏿‍💻 GitHub
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 🐬 OneDrive
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 🪟 Microsoft
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 🍎 Apple
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇹🇼 台湾节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 📲 Telegram
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 🎵 TikTok
+    <<: *select
+    proxies: ["🔯 故障转移", "♻️ 自动选择", "🇹🇼 台湾节点", "🇯🇵 日本节点", "🇰🇷 韩国节点", "🇸🇬 新加坡节点", "🇵🇭 菲律宾节点", "🇺🇸 美国节点", "🌐 全部节点", "🚀 默认代理", "DIRECT"]
+
+  - name: 🎥 NETFLIX
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇹🇼 台湾节点", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇵🇭 菲律宾节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 💶 Wallet
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇯🇵 日本节点", "🇸🇬 新加坡节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+  - name: 🎮 Steam
+    <<: *select
+    proxies: ["🚀 默认代理", "♻️ 自动选择", "🔯 故障转移", "🇭🇰 香港节点", "🇯🇵 日本节点", "🇰🇷 韩国节点", "🇺🇸 美国节点", "🌐 全部节点", "DIRECT"]
+
+rules:
+  - AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((RULE-SET,cn_ip,no-resolve)))),REJECT
+
+  - RULE-SET,private_domain,DIRECT
+  - RULE-SET,private_ip,DIRECT,no-resolve
+
+  - RULE-SET,ai_domain,🤖 AI
+  - RULE-SET,youtube_domain,📹 YouTube
+  - RULE-SET,google_domain,🍀 Google
+  - RULE-SET,github_domain,👨🏿‍💻 GitHub
+  - RULE-SET,onedrive_domain,🐬 OneDrive
+  - RULE-SET,microsoft_cn_domain,DIRECT
+  - RULE-SET,microsoft_domain,🪟 Microsoft
+  - RULE-SET,apple_cn_domain,DIRECT
+  - RULE-SET,apple_domain,🍎 Apple
+  - RULE-SET,telegram_domain,📲 Telegram
+  - RULE-SET,tiktok_domain,🎵 TikTok
+  - RULE-SET,netflix_domain,🎥 NETFLIX
+  - RULE-SET,paypal_domain,💶 Wallet
+  - RULE-SET,binance_domain,💶 Wallet
+  - RULE-SET,okx_domain,💶 Wallet
+  - RULE-SET,crypto_domain,💶 Wallet
+  - RULE-SET,steam_cn_domain,DIRECT
+  - RULE-SET,steam_domain,🎮 Steam
+
+  - RULE-SET,cn_domain,DIRECT
+  - RULE-SET,not_cn_domain,🚀 默认代理
+
+  - RULE-SET,google_ip,🍀 Google,no-resolve
+  - RULE-SET,apple_ip,🍎 Apple,no-resolve
+  - RULE-SET,telegram_ip,📲 Telegram,no-resolve
+  - RULE-SET,netflix_ip,🎥 NETFLIX,no-resolve
+  - RULE-SET,cn_ip,DIRECT,no-resolve
+
+  - MATCH,🚀 默认代理
+
+rule-anchor:
+  domain: &domain
+    type: http
+    interval: 86400
+    behavior: domain
+    format: mrs
+  ip: &ip
+    type: http
+    interval: 86400
+    behavior: ipcidr
+    format: mrs
+
+rule-providers:
+  private_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/private.mrs"
+  private_ip:
+    <<: *ip
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
+  fakeip_filter:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/appshubcc/bett-rules@meta/geo/geosite/fakeip-filter.mrs"
+
+  ai_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-!cn.mrs"
+  youtube_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/youtube.mrs"
+  google_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google.mrs"
+  google_ip:
+    <<: *ip
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/google.mrs"
+  github_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/github.mrs"
+  onedrive_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/onedrive.mrs"
+  microsoft_cn_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/microsoft@cn.mrs"
+  microsoft_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/microsoft.mrs"
+  apple_cn_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple@cn.mrs"
+  apple_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple.mrs"
+  apple_ip:
+    <<: *ip
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo-lite/geoip/apple.mrs"
+  telegram_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/telegram.mrs"
+  telegram_ip:
+    <<: *ip
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/telegram.mrs"
+  tiktok_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/tiktok.mrs"
+  netflix_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/netflix.mrs"
+  netflix_ip:
+    <<: *ip
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/netflix.mrs"
+  paypal_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/paypal.mrs"
+  binance_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/binance.mrs"
+  okx_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/okx.mrs"
+  crypto_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-cryptocurrency.mrs"
+  steam_cn_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam@cn.mrs"
+  steam_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam.mrs"
+  cn_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-cn.mrs"
+  not_cn_domain:
+    <<: *domain
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
+  cn_ip:
+    <<: *ip
+    url: "https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cn.mrs"
